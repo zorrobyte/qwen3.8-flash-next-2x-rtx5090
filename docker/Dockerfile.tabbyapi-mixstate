@@ -33,7 +33,7 @@ RUN set -eu; command -v nvcc; \
     grep -n "gr_v2_up_i8_state_kernel" "$site/exllamav3/exllamav3_ext/hc_mix.cu" > /dev/null; \
     grep -n "gr_mix_v2_int8_statein" "$site/exllamav3/exllamav3_ext/bindings.cpp" > /dev/null; \
     grep -n "STATE_IN_UP" "$site/exllamav3/modules/hyperconnections.py" > /dev/null; \
-    cd /tmp; MAX_JOBS=${MAX_JOBS} nice -n 19 python3 /tmp/rebuild-native.py build_ext --force --build-lib "$site"; \
+    rm -rf /tmp/build; cd /tmp; MAX_JOBS=${MAX_JOBS} nice -n 19 python3 /tmp/rebuild-native.py build_ext --force --build-lib "$site"; \
     python3 -c 'import importlib.util; s = importlib.util.find_spec("exllamav3_ext"); assert s and s.origin; print("ext:", s.origin)'; \
-    rm -rf /tmp/ms /tmp/rebuild-native.py
+    rm -rf /tmp/ms /tmp/rebuild-native.py /tmp/build; python3 -c "import exllamav3.ext"
 LABEL local.mixstate.base="tabbyapi:mtpnorm-r1"

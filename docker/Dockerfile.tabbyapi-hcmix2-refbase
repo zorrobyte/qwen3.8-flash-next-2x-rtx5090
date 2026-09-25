@@ -1,0 +1,17 @@
+# Replacement for `Dockerfile.tabbyapi-bszn PATCH=hc-mix-v2-r2.patch` (the -hcmix2 layer). hc-mix-v2-r2.patch is relative to
+# an unpublished r1 V2 mixer and does not apply to stock ExLlamaV3 v1.5.0 (10/10 hunks fail in hc_mix.cu; issue #1). This
+# layer installs the published full files from overlays/refbase/files instead: against stock they differ only by the r2
+# mixer plus the default-off gr_mix_v2_fused (EXL3_DECODE_FUSE=0). Build context = docker/.
+ARG BASE=tabbyapi:qsa-cid-pr337-bszn16-coopwide
+FROM ${BASE}
+USER root
+ARG MAX_JOBS=6
+ENV TORCH_CUDA_ARCH_LIST=12.0
+COPY overlays/refbase/files/exllamav3_ext/hc_mix.cu overlays/refbase/files/exllamav3_ext/hc_mix.cuh overlays/refbase/files/exllamav3_ext/bindings.cpp overlays/refbase/files/modules/hyperconnections.py /tmp/hcmix2/
+COPY rebuild-native.py /tmp/rebuild-native.py
+RUN set -eu; S=/opt/venv/lib/python3.12/site-packages/exllamav3; \
+    cp /tmp/hcmix2/hc_mix.cu /tmp/hcmix2/hc_mix.cuh /tmp/hcmix2/bindings.cpp $S/exllamav3_ext/; \
+    cp /tmp/hcmix2/hyperconnections.py $S/modules/; python3 -m py_compile $S/modules/hyperconnections.py; \
+    rm -rf /tmp/build; cd /tmp; MAX_JOBS=${MAX_JOBS} python3 /tmp/rebuild-native.py build_ext --force --build-lib /opt/venv/lib/python3.12/site-packages; \
+    rm -rf /tmp/build /tmp/hcmix2; python3 -c "import exllamav3.ext"
+LABEL local.hcmix2.source="overlays/refbase/files"
