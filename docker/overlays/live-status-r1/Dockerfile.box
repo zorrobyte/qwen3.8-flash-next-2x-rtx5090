@@ -1,0 +1,11 @@
+# live-status-r1 (chaossrv): GET /live returns the active jobs and cache statistics that TabbyAPI keeps for its console
+# status display, as JSON, for the host dashboard. Python only, read-only, no numerics change. Build context = this dir.
+ARG BASE=tabbyapi:stack-r3-rows32
+FROM ${BASE}
+COPY live_status.py /app/common/live_status.py
+RUN set -eu; R=/app/endpoints/core/router.py; grep -q '"/live"' "$R" || printf '%s\n' '' \
+      '# chaossrv live-status-r1: JSON snapshot of active jobs and cache statistics (unauthenticated, like /metrics).' \
+      'from common.live_status import live_snapshot as _live_snapshot' '' \
+      '@router.get("/live")' 'async def live_status() -> JSONResponse:' '    return JSONResponse(_live_snapshot())' >> "$R"; \
+    cd /app && python3 -c "import endpoints.core.router as r; assert any(getattr(x, 'path', None) == '/live' for x in r.router.routes); print('live-status-r1 landed')"
+LABEL local.live_status.round="r1"

@@ -1,0 +1,358 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>chaossrv monitor</title>
+<style>
+:root {
+  color-scheme: light;
+  --page: #f9f9f7; --surface: #fcfcfb; --surface-2: #f0efec; --line: #e4e3df;
+  --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781;
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100;
+  --good: #0ca30c; --warning: #fab219; --serious: #ec835a; --critical: #d03b3b;
+  --track: #e9e8e4;
+}
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface: #1a1a19; --surface-2: #232321; --line: #2e2e2b;
+    --ink: #ffffff; --ink-2: #c3c2b7; --muted: #898781;
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500;
+    --track: #2a2a27;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d; --surface: #1a1a19; --surface-2: #232321; --line: #2e2e2b;
+  --ink: #ffffff; --ink-2: #c3c2b7; --muted: #898781;
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500;
+  --track: #2a2a27;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--page); color: var(--ink); font: 14px/1.4 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+.num, td.n, .mono { font-variant-numeric: tabular-nums; }
+.mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 14px 20px; border-bottom: 1px solid var(--line); background: var(--surface); position: sticky; top: 0; z-index: 5; }
+header h1 { font-size: 16px; margin: 0; font-weight: 650; }
+.pill { display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px; border-radius: 999px; background: var(--surface-2); color: var(--ink-2); font-size: 12px; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+.meta { color: var(--muted); font-size: 12px; }
+header .spacer { flex: 1; }
+button.theme { background: var(--surface-2); color: var(--ink-2); border: 1px solid var(--line); border-radius: 8px; padding: 4px 10px; cursor: pointer; font: inherit; font-size: 12px; }
+main { padding: 16px 20px 40px; display: grid; gap: 16px; max-width: 1500px; margin: 0 auto; }
+.grid { display: grid; gap: 16px; }
+.tiles { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
+.two { grid-template-columns: repeat(auto-fit, minmax(min(100%, 520px), 1fr)); }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; min-width: 0; }
+.card h2 { font-size: 13px; font-weight: 600; margin: 0 0 10px; color: var(--ink-2); display: flex; gap: 8px; align-items: baseline; }
+.card h2 .meta { font-weight: 400; }
+.tile .label { color: var(--ink-2); font-size: 12px; }
+.tile .value { font-size: 30px; font-weight: 650; letter-spacing: -0.01em; margin-top: 2px; }
+.tile .value small { font-size: 14px; font-weight: 500; color: var(--ink-2); margin-left: 3px; }
+.tile .sub { color: var(--muted); font-size: 12px; margin-top: 2px; }
+.bar { height: 8px; background: var(--track); border-radius: 4px; overflow: hidden; margin-top: 8px; }
+.bar > i { display: block; height: 100%; border-radius: 4px; background: var(--s1); transition: width .4s; }
+.slots { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
+.slot { border: 1px solid var(--line); border-radius: 10px; padding: 10px; background: var(--surface-2); min-height: 92px; }
+.slot .st { font-size: 12px; font-weight: 600; display: flex; align-items: center; gap: 6px; }
+.slot .st .dot { width: 9px; height: 9px; }
+.slot.idle { opacity: .55; }
+.slot .big { font-size: 20px; font-weight: 650; margin-top: 4px; }
+.slot .d { color: var(--muted); font-size: 12px; }
+.chart { position: relative; height: 170px; }
+.chart canvas { width: 100%; height: 100%; display: block; }
+.legend { display: flex; gap: 14px; font-size: 12px; color: var(--ink-2); margin: -4px 0 6px; flex-wrap: wrap; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { width: 14px; height: 3px; border-radius: 2px; display: inline-block; }
+.tip { position: absolute; pointer-events: none; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 6px 9px; font-size: 12px; box-shadow: 0 4px 14px rgba(0,0,0,.12); white-space: nowrap; display: none; z-index: 3; }
+.tip b { font-weight: 600; }
+.kv { display: grid; grid-template-columns: auto 1fr; gap: 3px 14px; font-size: 13px; }
+.kv dt { color: var(--muted); }
+.kv dd { margin: 0; text-align: right; }
+.gpu-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.gpu-head .name { font-weight: 650; }
+.meters { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 10px 0 12px; }
+.meter .label { font-size: 12px; color: var(--ink-2); }
+.meter .v { font-size: 20px; font-weight: 650; }
+.meter .v small { font-size: 12px; font-weight: 500; color: var(--muted); }
+.cores { display: grid; grid-template-columns: repeat(16, 1fr); gap: 3px; }
+.core { height: 46px; background: var(--track); border-radius: 4px; position: relative; overflow: hidden; }
+.core > i { position: absolute; left: 0; right: 0; bottom: 0; background: var(--s1); border-radius: 4px 4px 0 0; transition: height .4s; }
+.core span { position: absolute; top: 2px; left: 0; right: 0; text-align: center; font-size: 9px; color: var(--muted); }
+.warn { color: var(--serious); }
+table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+th { text-align: left; font-weight: 500; color: var(--muted); padding: 5px 8px; border-bottom: 1px solid var(--line); }
+td { padding: 5px 8px; border-bottom: 1px solid var(--line); }
+th.n, td.n { text-align: right; }
+.tablewrap { overflow-x: auto; }
+.status-good { color: var(--good); } .status-warning { color: var(--warning); } .status-critical { color: var(--critical); }
+@media (max-width: 640px) { main { padding: 12px; } .meters { grid-template-columns: repeat(2, 1fr); } .cores { grid-template-columns: repeat(8, 1fr); } .tile .value { font-size: 24px; } }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="host">chaossrv</h1>
+  <span class="pill"><span class="dot" id="upDot"></span><span id="upText">connecting</span></span>
+  <span class="meta" id="model"></span>
+  <span class="spacer"></span>
+  <span class="meta" id="sysmeta"></span>
+  <button class="theme" id="theme" title="Toggle theme">theme</button>
+</header>
+<main>
+  <section class="grid tiles">
+    <div class="card tile"><div class="label">Generation, live</div><div class="value num" id="tTps">–<small>tok/s</small></div><div class="sub" id="tTpsSub">sum over active slots</div></div>
+    <div class="card tile"><div class="label">Slots in use</div><div class="value num" id="tSlots">–</div><div class="sub" id="tSlotsSub"></div></div>
+    <div class="card tile"><div class="label">KV page pool</div><div class="value num" id="tPool">–</div><div class="bar"><i id="tPoolBar" style="width:0"></i></div><div class="sub" id="tPoolSub"></div></div>
+    <div class="card tile"><div class="label">GPU power, total</div><div class="value num" id="tPower">–<small>W</small></div><div class="sub" id="tPowerSub"></div></div>
+    <div class="card tile"><div class="label">Requests completed</div><div class="value num" id="tReq">–</div><div class="sub" id="tReqSub"></div></div>
+  </section>
+
+  <section class="card">
+    <h2>Slots <span class="meta" id="slotMeta"></span></h2>
+    <div class="slots" id="slots"></div>
+  </section>
+
+  <section class="grid two">
+    <div class="card"><h2>Generation tok/s <span class="meta">last 10 min, sum over slots</span></h2><div class="chart" id="cTps"></div></div>
+    <div class="card"><h2>Slots in use <span class="meta">last 10 min, of 8</span></h2><div class="chart" id="cActive"></div></div>
+  </section>
+
+  <section class="grid two" id="gpuCards"></section>
+
+  <section class="grid two">
+    <div class="card"><h2>GPU power <span class="meta">W, last 10 min</span></h2><div class="legend" id="lPower"></div><div class="chart" id="cPower"></div></div>
+    <div class="card"><h2>GPU utilization <span class="meta">%, last 10 min</span></h2><div class="legend" id="lUtil"></div><div class="chart" id="cUtil"></div></div>
+  </section>
+
+  <section class="grid two">
+    <div class="card">
+      <h2>CPU <span class="meta" id="cpuMeta"></span></h2>
+      <div class="cores" id="cores"></div>
+      <div class="chart" id="cCpu" style="height:120px;margin-top:12px"></div>
+    </div>
+    <div class="card">
+      <h2>Memory</h2>
+      <dl class="kv" id="memKv"></dl>
+      <div class="bar"><i id="memBar" style="width:0"></i></div>
+      <div class="chart" id="cMem" style="height:110px;margin-top:12px"></div>
+    </div>
+  </section>
+
+  <section class="grid two">
+    <div class="card"><h2>Temperatures</h2><dl class="kv" id="tempKv"></dl></div>
+    <div class="card"><h2>Disk and network <span class="meta">per second</span></h2><dl class="kv" id="ioKv"></dl></div>
+  </section>
+
+  <section class="card">
+    <h2>Recent requests <span class="meta">from the server log, newest first</span></h2>
+    <div class="tablewrap"><table>
+      <thead><tr><th>time (UTC)</th><th>#</th><th>endpoint</th><th class="n">prompt</th><th class="n">cached</th><th class="n">generated</th><th class="n">decode tok/s</th><th class="n">TTFT s</th><th class="n">total s</th><th class="n">draft accept</th><th>finish</th></tr></thead>
+      <tbody id="reqs"></tbody>
+    </table></div>
+  </section>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const fmt = (v, d = 0) => v == null || isNaN(v) ? "–" : Number(v).toLocaleString(undefined, { maximumFractionDigits: d, minimumFractionDigits: d });
+const bytes = v => { if (v == null) return "–"; const u = ["B", "KB", "MB", "GB", "TB"]; let i = 0; while (v >= 1024 && i < 4) { v /= 1024; i++; } return fmt(v, v < 10 && i ? 1 : 0) + " " + u[i]; };
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+// theme toggle (per-viewer convenience)
+try { const t = localStorage.getItem("mon-theme"); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
+$("theme").onclick = () => {
+  const cur = document.documentElement.dataset.theme || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+  const next = cur === "dark" ? "light" : "dark";
+  document.documentElement.dataset.theme = next;
+  try { localStorage.setItem("mon-theme", next); } catch (e) {}
+  drawCharts();
+};
+
+// ------------------------------------------------------------ line chart with crosshair tooltip
+class LineChart {
+  constructor(el, opts) {
+    this.el = el; this.o = opts;
+    this.c = document.createElement("canvas"); el.appendChild(this.c);
+    this.tip = document.createElement("div"); this.tip.className = "tip"; el.appendChild(this.tip);
+    this.hover = null; this.data = [];
+    el.addEventListener("mousemove", e => { const r = this.c.getBoundingClientRect(); this.hover = e.clientX - r.left; this.draw(); });
+    el.addEventListener("mouseleave", () => { this.hover = null; this.tip.style.display = "none"; this.draw(); });
+  }
+  set(data) { this.data = data; this.draw(); }
+  draw() {
+    const { c, o } = this, dpr = devicePixelRatio || 1, W = c.clientWidth, H = c.clientHeight;
+    if (!W) return;
+    c.width = W * dpr; c.height = H * dpr;
+    const g = c.getContext("2d"); g.scale(dpr, dpr); g.clearRect(0, 0, W, H);
+    const pad = { l: 44, r: 10, t: 8, b: 20 }, pw = W - pad.l - pad.r, ph = H - pad.t - pad.b;
+    const d = this.data; if (!d.length) return;
+    const t0 = d[0].t, t1 = d[d.length - 1].t, span = Math.max(t1 - t0, 1);
+    let max = o.max ?? 0;
+    if (o.max == null) { for (const p of d) for (const s of o.series) { const v = s.get(p); if (v != null && v > max) max = v; } max = niceMax(max || 1); }
+    const X = t => pad.l + (t - t0) / span * pw, Y = v => pad.t + ph - (v / max) * ph;
+    // grid + y labels
+    g.strokeStyle = css("--line"); g.lineWidth = 1; g.fillStyle = css("--muted"); g.font = "11px ui-sans-serif, system-ui"; g.textAlign = "right"; g.textBaseline = "middle";
+    for (let i = 0; i <= 4; i++) { const v = max * i / 4, y = Math.round(Y(v)) + .5; g.beginPath(); g.moveTo(pad.l, y); g.lineTo(W - pad.r, y); g.stroke(); g.fillText(fmt(v, max < 10 ? 1 : 0), pad.l - 6, y); }
+    g.textAlign = "left"; g.textBaseline = "alphabetic"; g.fillText(span < 90 ? "-" + Math.round(span) + " s" : "-" + Math.round(span / 60) + " min", pad.l, H - 4); g.textAlign = "right"; g.fillText("now", W - pad.r, H - 4);
+    // reference line (e.g. power limit)
+    if (o.ref) { g.setLineDash([4, 4]); g.strokeStyle = css("--muted"); const y = Y(o.ref.v) + .5; g.beginPath(); g.moveTo(pad.l, y); g.lineTo(W - pad.r, y); g.stroke(); g.setLineDash([]); g.fillStyle = css("--muted"); g.textAlign = "left"; g.fillText(o.ref.label, pad.l + 4, y - 4); }
+    // series
+    for (const s of o.series) {
+      const col = css(s.color);
+      if (o.area && o.series.length === 1) {
+        g.beginPath(); let started = false;
+        for (const p of d) { const v = s.get(p); if (v == null) continue; const x = X(p.t), y = Y(v); if (!started) { g.moveTo(x, Y(0)); g.lineTo(x, y); started = true; } else g.lineTo(x, y); }
+        g.lineTo(X(t1), Y(0)); g.closePath(); g.globalAlpha = .12; g.fillStyle = col; g.fill(); g.globalAlpha = 1;
+      }
+      g.beginPath(); g.strokeStyle = col; g.lineWidth = 2; g.lineJoin = "round"; let pen = false;
+      for (const p of d) { const v = s.get(p); if (v == null) { pen = false; continue; } const x = X(p.t), y = Y(v); pen ? g.lineTo(x, y) : g.moveTo(x, y); pen = true; }
+      g.stroke();
+    }
+    // crosshair
+    if (this.hover != null && this.hover >= pad.l && this.hover <= W - pad.r) {
+      const t = t0 + (this.hover - pad.l) / pw * span;
+      let best = d[0]; for (const p of d) if (Math.abs(p.t - t) < Math.abs(best.t - t)) best = p;
+      const x = Math.round(X(best.t)) + .5;
+      g.strokeStyle = css("--muted"); g.beginPath(); g.moveTo(x, pad.t); g.lineTo(x, pad.t + ph); g.stroke();
+      let html = `<div class="meta">${new Date(best.t * 1000).toLocaleTimeString()}</div>`;
+      for (const s of o.series) {
+        const v = s.get(best); if (v == null) continue;
+        g.beginPath(); g.fillStyle = css(s.color); g.strokeStyle = css("--surface"); g.lineWidth = 2; g.arc(x, Y(v), 4.5, 0, 7); g.fill(); g.stroke();
+        html += `<div><span style="display:inline-block;width:10px;height:3px;border-radius:2px;background:${css(s.color)};vertical-align:middle;margin-right:6px"></span>${esc(s.name)} <b>${fmt(v, o.digits ?? 0)}</b> ${o.unit || ""}</div>`;
+      }
+      this.tip.innerHTML = html; this.tip.style.display = "block";
+      const tw = this.tip.offsetWidth; this.tip.style.left = Math.min(Math.max(x + 12, 0), W - tw - 4) + "px"; this.tip.style.top = pad.t + "px";
+    }
+  }
+}
+function niceMax(v) { const e = Math.pow(10, Math.floor(Math.log10(v))); const f = v / e; return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10) * e; }
+function legend(el, series) { el.innerHTML = series.map(s => `<span><i style="background:var(${s.color})"></i>${esc(s.name)}</span>`).join(""); }
+
+const gpuSeries = key => [0, 1].map(i => ({ name: "GPU" + i, color: i ? "--s2" : "--s1", get: p => (p[key] || [])[i] }));
+const charts = {
+  tps: new LineChart($("cTps"), { series: [{ name: "tok/s", color: "--s1", get: p => p.tps }], area: true, unit: "tok/s" }),
+  active: new LineChart($("cActive"), { series: [{ name: "slots", color: "--s1", get: p => p.active }], max: 8, area: true, unit: "of 8" }),
+  power: new LineChart($("cPower"), { series: gpuSeries("gpu_power"), max: 650, ref: { v: 600, label: "600 W limit" }, unit: "W" }),
+  util: new LineChart($("cUtil"), { series: gpuSeries("gpu_util"), max: 100, unit: "%" }),
+  cpu: new LineChart($("cCpu"), { series: [{ name: "CPU", color: "--s1", get: p => p.cpu }], max: 100, area: true, unit: "%", digits: 1 }),
+  mem: new LineChart($("cMem"), { series: [{ name: "used", color: "--s1", get: p => p.mem_used == null ? null : p.mem_used / 2 ** 30 }], area: true, unit: "GiB", digits: 1 }),
+};
+legend($("lPower"), gpuSeries("gpu_power")); legend($("lUtil"), gpuSeries("gpu_util"));
+let history = [];
+function drawCharts() { for (const c of Object.values(charts)) c.set(history); }
+addEventListener("resize", drawCharts);
+
+// ------------------------------------------------------------ rendering
+const STAGE = { generating: ["--s1", "generating"], prefill: ["--s4", "prefill"], queued: ["--muted", "queued"] };
+
+function render(st) {
+  const L = st.latest, S = st.static || {};
+  if (!L) return;
+  $("host").textContent = S.host || "chaossrv";
+  $("sysmeta").textContent = [S.kernel, "P2P " + (S.p2p || "?"), "CPU EPP " + (L.cpu.epp || "?"), S.cstates, "up " + fmt((S.uptime || 0) / 3600, 1) + " h"].filter(Boolean).join(" · ");
+  const live = L.live;
+  $("upDot").style.background = css(L.up ? "--good" : "--critical");
+  $("upText").textContent = L.up ? "serving :8022" : "flashnext down";
+  $("model").textContent = live ? `Qwen3.8-Flash-Next EXL3 2.50bpw · ${fmt(live.max_batch_size)} slots · ${fmt(live.max_seq_len)} ctx` : "";
+
+  const jobs = live?.jobs || [], cache = live?.cache || {};
+  $("tTps").innerHTML = `${fmt(live?.tps || 0)}<small>tok/s</small>`;
+  const gen = jobs.filter(j => j.stage === "generating").length, pre = jobs.filter(j => j.stage === "prefill").length, q = jobs.filter(j => j.stage === "queued").length;
+  $("tSlots").textContent = `${jobs.length} / ${live?.max_batch_size ?? 8}`;
+  $("tSlotsSub").textContent = `${gen} generating · ${pre} prefill · ${q + (cache.pending_jobs || 0) > 0 ? (cache.pending_jobs || q) + " queued" : "none queued"}`;
+  const poolPct = cache.max_tokens ? cache.used_tokens / cache.max_tokens * 100 : 0;
+  $("tPool").textContent = fmt(poolPct, 1) + "%";
+  $("tPoolBar").style.width = poolPct + "%";
+  $("tPoolSub").textContent = `${fmt(cache.used_tokens)} / ${fmt(cache.max_tokens)} tokens · ${fmt(cache.cached_tokens)} reusable · hit ${fmt((cache.hit_rate || 0) * 100)}%`;
+  const pw = L.gpus.reduce((a, g) => a + (g.power || 0), 0), pl = L.gpus.reduce((a, g) => a + (g.power_limit || 0), 0);
+  $("tPower").innerHTML = `${fmt(pw)}<small>W</small>`;
+  $("tPowerSub").textContent = `of ${fmt(pl)} W limit · ${L.gpus.map(g => fmt(g.power) + " W").join(" + ")}`;
+  const C = L.counters || {};
+  $("tReq").textContent = fmt(C.tabby_requests_total);
+  $("tReqSub").textContent = `${fmt((C.tabby_generated_tokens_total || 0) / 1e3, 1)}k generated · ${fmt((C.tabby_prompt_tokens_total || 0) / 1e6, 2)}M prompt`;
+
+  // slots
+  const n = live?.max_batch_size || 8, cells = [];
+  const order = [...jobs].sort((a, b) => (b.age_s || 0) - (a.age_s || 0));
+  for (let i = 0; i < n; i++) {
+    const j = order[i];
+    if (!j) { cells.push(`<div class="slot idle"><div class="st"><span class="dot"></span>idle</div><div class="big">–</div><div class="d">slot ${i + 1}</div></div>`); continue; }
+    const [col, label] = STAGE[j.stage] || ["--muted", j.stage];
+    let big, d;
+    if (j.stage === "generating") { big = `${fmt(j.tps || 0)} <span class="d">tok/s</span>`; d = `${fmt(j.gen_tokens)} tokens · ctx ${fmt(j.prompt_tokens + j.gen_tokens)}`; }
+    else if (j.stage === "prefill") { const pct = j.prompt_tokens ? j.prefill_tokens / j.prompt_tokens * 100 : 0; big = `${fmt(pct)}%`; d = `${fmt(j.prefill_tokens)} / ${fmt(j.prompt_tokens)} prompt${j.cached_tokens ? " · " + fmt(j.cached_tokens) + " cached" : ""}`; }
+    else { big = "waiting"; d = `${fmt(j.prompt_tokens)} prompt tokens`; }
+    cells.push(`<div class="slot"><div class="st"><span class="dot" style="background:var(${col})"></span>${label}<span class="meta" style="margin-left:auto">${fmt(j.age_s, 0)} s</span></div><div class="big num">${big}</div><div class="d num">${d}</div></div>`);
+  }
+  $("slots").innerHTML = cells.join("");
+  $("slotMeta").textContent = jobs.length ? `${esc(order[0].label || "")}${jobs.length > 1 ? " …" : ""}` : "no active requests";
+
+  // GPUs
+  $("gpuCards").innerHTML = L.gpus.map((g, i) => {
+    const memPct = g.mem_total ? g.mem_used / g.mem_total * 100 : 0, pwPct = g.power_limit ? g.power / g.power_limit * 100 : 0;
+    const reasons = g.reasons.length ? `<span class="warn">${esc(g.reasons.join(", "))}</span>` : "none";
+    return `<div class="card"><div class="gpu-head"><span class="name"><span class="dot" style="display:inline-block;background:var(${i ? "--s2" : "--s1"});margin-right:6px"></span>GPU${g.index} · ${esc(g.name)}</span><span class="meta">${esc(g.pcie)} · ${esc(g.pstate)}</span></div>
+      <div class="meters">
+        <div class="meter"><div class="label">Power</div><div class="v num">${fmt(g.power)}<small> / ${fmt(g.power_limit)} W</small></div><div class="bar"><i style="width:${pwPct}%;background:var(${i ? "--s2" : "--s1"})"></i></div></div>
+        <div class="meter"><div class="label">Utilization</div><div class="v num">${fmt(g.util)}<small> %</small></div><div class="bar"><i style="width:${g.util || 0}%;background:var(${i ? "--s2" : "--s1"})"></i></div></div>
+        <div class="meter"><div class="label">VRAM</div><div class="v num">${fmt(g.mem_used / 1024, 1)}<small> / ${fmt(g.mem_total / 1024, 1)} GiB</small></div><div class="bar"><i style="width:${memPct}%;background:var(${i ? "--s2" : "--s1"})"></i></div></div>
+      </div>
+      <dl class="kv">
+        <dt>Temperature</dt><dd class="num">${fmt(g.temp)} °C</dd>
+        <dt>Fan</dt><dd class="num">${g.fan == null ? "n/a" : fmt(g.fan) + " %"}</dd>
+        <dt>SM clock</dt><dd class="num">${fmt(g.sm_clock)} / ${fmt(g.sm_max)} MHz</dd>
+        <dt>Memory clock</dt><dd class="num">${fmt(g.mem_clock)} / ${fmt(g.mem_max)} MHz</dd>
+        <dt>Memory controller busy</dt><dd class="num">${fmt(g.mem_util)} %</dd>
+        <dt>Clock limiters</dt><dd>${reasons}</dd>
+      </dl></div>`;
+  }).join("");
+
+  // CPU
+  const cores = L.cpu.cores || [];
+  $("cores").innerHTML = cores.map((u, i) => `<div class="core" title="cpu${i}: ${fmt(u)}% @ ${fmt(L.cpu.freq[i])} MHz${i < 8 || (i >= 16 && i < 24) ? " (V-cache CCD)" : ""}"><i style="height:${u}%"></i><span>${i}</span></div>`).join("");
+  $("cpuMeta").textContent = `${fmt(L.cpu.total, 1)}% total · load ${L.cpu.load.map(x => fmt(x, 2)).join(" ")} · ${fmt(Math.max(...L.cpu.freq.filter(Boolean)))} MHz max core`;
+
+  // memory
+  const m = L.mem, used = m.total - m.available;
+  $("memKv").innerHTML = `<dt>Used</dt><dd class="num">${bytes(used)} / ${bytes(m.total)}</dd><dt>Page cache + buffers</dt><dd class="num">${bytes(m.cached)}</dd><dt>Available</dt><dd class="num">${bytes(m.available)}</dd><dt>Swap</dt><dd class="num">${bytes(m.swap_used)} / ${bytes(m.swap_total)}</dd>`;
+  $("memBar").style.width = used / m.total * 100 + "%";
+
+  // temps
+  const tclass = c => c >= 90 ? "status-critical" : c >= 80 ? "status-warning" : "";
+  const gt = L.gpus.map(g => `<dt>GPU${g.index}</dt><dd class="num ${tclass(g.temp)}">${fmt(g.temp)} °C</dd>`).join("");
+  $("tempKv").innerHTML = gt + L.temps.map(t => `<dt>${esc(t.chip === "k10temp" ? "CPU " + t.label : t.chip === "nvme" ? "NVMe " + t.label : "DIMM " + t.label)}</dt><dd class="num ${tclass(t.c)}">${fmt(t.c, 1)} °C</dd>`).join("");
+
+  // io
+  $("ioKv").innerHTML = L.disks.map(d => `<dt>${esc(d.dev)}</dt><dd class="num">read ${bytes(d.read)} · write ${bytes(d.write)}</dd>`).join("") +
+    L.net.map(n => `<dt>${esc(n.iface)}</dt><dd class="num">rx ${bytes(n.rx)} · tx ${bytes(n.tx)}</dd>`).join("") +
+    `<dt>Prompt tokens ingested</dt><dd class="num">${fmt(L.prompt_rate || 0)} tok/s (completed requests)</dd>`;
+
+  // recent requests
+  $("reqs").innerHTML = (st.recent || []).map(r => `<tr><td class="mono">${esc(r.time)}</td><td class="n">${r.n}</td><td>${esc(r.kind)}</td><td class="n">${fmt(r.prompt)}</td><td class="n">${fmt(r.cached)}</td><td class="n">${fmt(r.gen)}</td><td class="n">${fmt(r.tps, 1)}</td><td class="n">${fmt(r.ttft, 2)}</td><td class="n">${fmt(r.total, 1)}</td><td class="n">${r.accept == null ? "–" : fmt(r.accept * 100) + "%"}</td><td>${esc(r.finish)}</td></tr>`).join("") || `<tr><td colspan="11" class="meta">no completed requests in the last 10 minutes</td></tr>`;
+}
+
+async function tick() {
+  try {
+    const st = await (await fetch("api/state", { cache: "no-store" })).json();
+    render(st);
+    const L = st.latest;
+    if (L) {
+      const last = history[history.length - 1];
+      if (!last || last.t !== L.t) {
+        history.push({ t: L.t, tps: L.live?.tps || 0, active: (L.live?.jobs || []).length, gpu_power: L.gpus.map(g => g.power), gpu_util: L.gpus.map(g => g.util), cpu: L.cpu.total, mem_used: L.mem.total - L.mem.available });
+        while (history.length && history[0].t < L.t - 600) history.shift();
+        drawCharts();
+      }
+    }
+  } catch (e) {
+    $("upDot").style.background = css("--critical"); $("upText").textContent = "monitor unreachable";
+  }
+}
+(async () => {
+  try { history = await (await fetch("api/history", { cache: "no-store" })).json(); } catch (e) {}
+  drawCharts(); tick(); setInterval(tick, 1000);
+})();
+</script>
+</body>
+</html>
