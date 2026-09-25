@@ -81,3 +81,66 @@ per cell, so decode varies with how predictable the generated text is (MTP accep
 
 Code at 200k/240k filler exceeds the 262,144-token window (≈270k/320k tokens) and is rejected. 4 streams, code: 148.2
 per stream at 43k, 139.9 at 172k. GPU power over the sweep (samples > 100 W): 355 / 325 W mean, 549 / 497 W peak.
+
+## Charts (2026-09-25)
+
+Rendered by `hosts/chaossrv/charts.py` from `results/` into `charts/`. Colors follow one fixed order per chart; every
+chart with two or more series carries a legend.
+
+### Decode throughput against R719b
+
+![Aggregate decode tok/s against concurrency, chaossrv and R719b, code and prose](charts/01-decode-curve-vs-reference.png)
+
+Aggregate decode at 1 to 8 streams, greedy, 1,024 forced tokens, 118 / 106-token prompts (`results/oc4500/`), with
+R719b's `curve.tsv` from this repository. Against R719b the aggregate is −18.8 % (code) and −8.7 % (prose) at 1
+stream, −0.4 % and +7.1 % at 2, −4.9 to −9.2 % (code) and −3.7 to −7.7 % (prose) at 3 to 6, and −1.6 to −2.2 % at 7
+and 8.
+
+![Per-stream decode tok/s against concurrency, code and prose](charts/02-per-stream.png)
+
+### Against the Qwen3.8-27B NVFP4 pair on the same box
+
+![Aggregate tok/s against concurrency, Flash-Next layer split and 27B one vLLM per card](charts/03-flashnext-vs-27b.png)
+
+The 27B points are the 2026-09-24 vLLM serving-bench results on this box (thinking off): 1 stream on one card, 2
+streams as one per card, 4 streams on one card, 8 streams as four per card. The two harnesses differ, so the chart
+shows the shape of the two curves; single-digit percentage differences between them carry no information. At 8
+streams the 27B pair reaches 1,406 prose / 1,692 code against 840 / 830, since each card serves its own model while
+the layer split alternates the cards on every step.
+
+### Prefill and decode at depth
+
+![Cold prefill tok/s against prompt tokens, chaossrv code and prose with R580](charts/04-prefill.png)
+
+Cold prefill (salted filler, 1 stream, `results/ctxsweep/`) reaches 9,849 to 10,662 t/s from 43k tokens (code) and
+24k tokens (prose) upward, against R580's 9,706 to 10,636 t/s. R442 measured the two-card prefill pipeline at 36 %
+(30k) and 41 % (120k) less prefill time than the same split without it.
+
+![Decode tok/s at depth against prompt tokens, code and prose](charts/05-decode-at-depth.png)
+
+One request per point. Decode stays between 225 and 346 t/s from 6k to 180k tokens of context; the variation follows
+MTP draft acceptance on the generated text.
+
+### Power
+
+![GPU power in watts over the context sweep, GPU0 and GPU1, with the 600 W limit](charts/06-power-context-sweep.png)
+
+nvidia-smi `power.draw` at 500 ms during the context sweep. Prefill bursts hold both cards at 480 to 549 W together;
+decode holds each card near 300 W.
+
+![Peak power per card and both cards at the same instant, by workload](charts/07-power-peaks.png)
+
+Peak over every logged run on 2026-09-25: 1,045 W with both cards at the same instant (GPU0 548.8 W, GPU1 496.6 W)
+during cold prefill of 150k to 180k-token prompts; 584 W during the 1 to 8-stream decode curve; 575 W during decode at
+the stock 575 W limit without the memory offset. No card reached its power limit and no power-cap clock limiter was
+active in the samples. `power.draw` is an averaged reading, so transients shorter than a sample are not in these
+figures.
+
+### Tuning and P2P
+
+![1-stream decode tok/s per tuning step, code and prose, with R719b](charts/08-tuning-log.png)
+
+![GPU-to-GPU copy bandwidth and 4-byte copy latency, stock driver and P2P driver](charts/09-p2p.png)
+
+Stock 615.71.09 stages GPU-to-GPU copies through host memory (22.15 GB/s, 9.5 µs); the aikitoria `615.71.09-p2p`
+modules give 28.68 GB/s and 1.17 µs. Decode rates with and without P2P are within the run-to-run spread.
