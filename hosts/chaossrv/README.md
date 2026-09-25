@@ -62,3 +62,22 @@ Of the remaining gap to R719b at one stream, about half is MTP acceptance (2.64 
 the rest is step time (10.85 vs 10.0 ms). The c1 greedy fingerprint is `5cd590252f16ceaf` here against the served
 `f4add302e176d78e`. Regenerating the coop autotune cache changed it, so autotune choices (which differ per box)
 change the numerics and therefore which drafts are accepted on a given prompt.
+
+## Context sweep (2026-09-25, tuned host)
+
+`hosts/chaossrv/ctxsweep.sh`: cold salted `--unique` filler per depth, 1 stream, 1,024 forced greedy tokens; one request
+per cell, so decode varies with how predictable the generated text is (MTP acceptance). Raw: `results/ctxsweep/`.
+
+| prompt tokens (code / prose) | prefill t/s (code / prose) | decode t/s (code / prose) | R580 prefill |
+| --- | --- | --- | --- |
+| 118 / 106 | n/a | 243 / 253 | |
+| 11,145 / 6,102 | 4,103 / 5,478 | 238 / 235 | |
+| 21,545 / 12,108 | 8,015 / 7,456 | 312 / 338 | |
+| 43,130 / 24,167 | 9,849 / 9,072 | 304 / 225 | 9,706 @ 30k |
+| 86,241 / 48,061 | 10,034 / 9,865 | 260 / 346 | 10,381 @ 60k |
+| 172,343 / 96,132 | 10,376 / 10,335 | 274 / 232 | 10,538 @ 120k |
+| n/a / 149,679 | n/a / 10,522 | n/a / 238 | 10,636 @ 200k |
+| n/a / 180,259 | n/a / 10,662 | n/a / 235 | 10,543 @ 240k |
+
+Code at 200k/240k filler exceeds the 262,144-token window (≈270k/320k tokens) and is rejected. 4 streams, code: 148.2
+per stream at 43k, 139.9 at 172k. GPU power over the sweep (samples > 100 W): 355 / 325 W mean, 549 / 497 W peak.
