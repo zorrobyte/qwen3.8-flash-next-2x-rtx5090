@@ -168,3 +168,18 @@ for ax, vals, title, unit, cols in ((axes[0], bw, "GPU→GPU copy bandwidth", "G
     for r in bars: ax.annotate(f"{r.get_height():g} {unit}", (r.get_x() + r.get_width() / 2, r.get_height()), xytext=(0, 3), textcoords="offset points", ha="center", fontsize=9, color=INK2)
     ax.set_title(title); ax.set_ylabel(unit); ax.grid(axis="x", visible=False); ax.set_ylim(0, max(vals) * 1.25)
 save(fig, "09-p2p.png")
+
+# ---------- 10. standard benchmark (vllm bench serve, R731b method) against R731b
+r731b = {"sharegpt": {1: 221.3, 2: 304.7, 4: 398.5, 8: 471.2}, "specbench": {1: 244.2, 2: 341.9, 4: 446.3, 8: 525.4}}
+fig, axes = plt.subplots(1, 2, figsize=(11, 4), sharey=True)
+for ax, ds, title in zip(axes, ("sharegpt", "specbench"), ("ShareGPT V3 (400 prompts)", "Spec-Bench (480 questions, 256 tokens)")):
+    xs = [1, 2, 4, 8]
+    ya = [json.load(open(B / f"std-bench-07141f3/{ds}-c{c}.json"))["output_throughput"] for c in xs]
+    yb = [r731b[ds][c] for c in xs]
+    ax.plot(xs, ya, "-o", color=C1, label="chaossrv (07141f3 image)", markeredgecolor=SURF, markeredgewidth=1.5)
+    ax.plot(xs, yb, "-o", color=C2, label="adrienbrault R731b", markeredgecolor=SURF, markeredgewidth=1.5)
+    up = ya[-1] >= yb[-1]; label_end(ax, xs, ya, f"{ya[-1]:.0f}", C1, 7 if up else -7); label_end(ax, xs, yb, f"{yb[-1]:.0f}", C2, -7 if up else 7)
+    ax.set_title(f"{title}: output tok/s"); ax.set_xlabel("concurrent requests"); ax.set_xticks(xs)
+axes[0].set_ylim(0, 600); axes[0].set_ylabel("output tok/s (wall clock)"); axes[0].legend(loc="lower right")
+fig.suptitle("vllm bench serve v0.30.0 + bench/vllm_bench_tabby.py, seed 7310, fresh boot per cell", x=0.01, ha="left", fontsize=10, color=INK2)
+save(fig, "10-std-bench-vs-r731b.png")

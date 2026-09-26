@@ -4,7 +4,30 @@ This fork reproduces [adrienbrault/qwen3.8-flash-next-2x-rtx5090](https://github
 
 The fork adds a rootless-podman build of the 35-layer image chain with three fixes, a podman launcher, a read-only `/live` endpoint, host tuning, a host monitor, and the measurements below, all taken on 2026-09-25. Raw records are in [`hosts/chaossrv/results/`](hosts/chaossrv/results/); the charts are rendered from them by [`hosts/chaossrv/charts.py`](hosts/chaossrv/charts.py).
 
-## Numbers
+## Standard benchmark on the upstream `07141f3` image (2026-09-26)
+
+The image is `tabbyapi:stack-r3-rows32` built from upstream `07141f3` with `docker/build-chain.sh` (35 layers, rootless podman), plus `live-status-r1`. Its c1 greedy fingerprint is `5cd590252f16ceaf`, the same as the pre-fix image here. The run is R731b's method: `vllm bench serve` v0.30.0 through `bench/vllm_bench_tabby.py`, ShareGPT V3 (400 prompts, seed 7310, sha256 `35f0e213…`) and Spec-Bench (480 questions, 256 forced tokens, sha256 `4b6d33e7…`), a fresh server boot per cell, `c` non-stream warm-up requests, host tuned as below (600 W, memory offset +4500). One pass. Cells in which an OpenClaw request of about 146k tokens arrived were rerun (`specbench-c2`) or replaced by a clean repeat (`sharegpt-c1`); the kept cells contain no requests other than the benchmark and the launcher's 3-token warm-up. Raw records: [`hosts/chaossrv/results/std-bench-07141f3/`](hosts/chaossrv/results/std-bench-07141f3/).
+
+| dataset | streams | output tok/s | R731b | Δ | TTFT p50 ms | TPOT p50 ms | R731b TPOT p50 ms |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| ShareGPT | 1 | 211.1 | 221.3 | −4.6 % | 142 | 3.58 | 3.42 |
+| ShareGPT | 2 | 290.1 | 304.7 | −4.8 % | 204 | 5.19 | 4.82 |
+| ShareGPT | 4 | 384.3 | 398.5 | −3.6 % | 302 | 7.90 | 7.53 |
+| ShareGPT | 8 | 466.4 | 471.2 | −1.0 % | 377 | 14.24 | 14.03 |
+| Spec-Bench | 1 | 225.3 | 244.2 | −7.7 % | 140 | 3.72 | 3.37 |
+| Spec-Bench | 2 | 326.4 | 341.9 | −4.5 % | 197 | 5.09 | 4.80 |
+| Spec-Bench | 4 | 430.9 | 446.3 | −3.5 % | 280 | 7.84 | 7.58 |
+| Spec-Bench | 8 | 524.5 | 525.4 | −0.2 % | 393 | 13.50 | 13.45 |
+
+![Output tok/s against concurrency on ShareGPT and Spec-Bench, chaossrv and R731b](hosts/chaossrv/charts/10-std-bench-vs-r731b.png)
+
+Tokens per verify step from the server log (ShareGPT) are 2.65, 2.65, 2.66 and 2.30 at 1, 2, 4 and 8 streams, against R731b's 2.64, 2.63, 2.65 and 2.30. With the same prompts the MTP acceptance is the same on both machines, and the difference is time per step: +4.7 % (ShareGPT) and +10 % (Spec-Bench) TPOT at 1 stream, falling to +0.4 to +1.5 % at 8 streams. A fixed cost per verify step of roughly 0.4 ms (ShareGPT) to 1.0 ms (Spec-Bench) at 1 stream, diluted as the batch grows, fits that shape; its source is not identified. Two single-stream ShareGPT boots with the container's seccomp filter off and on gave 204.6 and 211.1 tok/s, so the filter is not it, and the two numbers bound the boot-to-boot spread at about 3 %.
+
+The earlier 1-stream gap on `bench/probe.py`'s code prompt (2.64 against 2.99 tokens per step, below) is a property of that one greedy path: the per-device coop autotune choices change the numerics and with them the accepted drafts on a given prompt.
+
+On the `07141f3` image the 1 to 8-stream `probe.py` curve (`results/fix07141f3/`) is 241 / 254 (code / prose) at 1 stream and 806 / 805 at 8 streams, 0 to 4 % below the pre-fix image, within the boot-to-boot spread. At 4 concurrent cold prompts (code) the restored free-VRAM guard fix (`memfix.py`) shows: 172k-token prompts reach their first token in 86 s against 111 s on the pre-fix image, and 43k-token prompts decode at 167 against 148 tok/s per stream (`results/ctxsweep-07141f3/`). Single-stream prefill is unchanged within 2 %.
+
+## Numbers (pre-fix image, 2026-09-25)
 
 Decode, greedy, 1,024 forced tokens (`min_tokens`), 118-token code and 106-token prose prompts, `bench/probe.py --distinct`, one warm-up and three recorded rounds per shape (the R719b method). Tuned host: CPU EPP `performance`, C2/C3 off, GPU power limit 600 W, memory clock offset +4500, P2P driver loaded. Rates are tokens per second after each request's first token; the aggregate is the per-stream median times the stream count.
 
