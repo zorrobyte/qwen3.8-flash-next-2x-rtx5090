@@ -12,17 +12,14 @@ A second machine running this repo's `tabbyapi:stack-r3-rows32` with the same ch
 
 ## Fixes needed to build the chain (upstream issue #1)
 
-1. **`-hcmix2`**: `hc-mix-v2-r2.patch` is relative to an unpublished r1 V2 mixer; every hunk fails on stock
-   ExLlamaV3 v1.5.0. `docker/Dockerfile.tabbyapi-hcmix2-refbase` installs the published full files from
-   `overlays/refbase/files/` instead (refbase overwrites these files later in the chain anyway).
-2. **`ngram-prefetch-r1`**: the manifest's baseline hash for `generator/prefill_pipeline.py` (`7f6e4b34…`) is produced
-   by no published layer; the published chain has `1a5af53b…`. That file's hunk is comment-only, so the manifest entry
-   is rebased (baseline `1a5af53b…`, overlay `e5e1389e…`); the other three files still match exactly.
-3. **`Dockerfile.tabbyapi-mixstate`**: reused `/tmp/build` objects from earlier layers. The decode-kernels-r2 payload is
-   COPY'd with checkout mtimes older than those objects, so ninja skipped `blocksparse_mlp.cpp` and the extension failed
-   to import (`undefined symbol: exl3_moe_coop_run(...)` without the `cudaEvent_t` argument). Now clears `/tmp/build`.
+Three breaks were found here: `hc-mix-v2-r2.patch` depended on an unpublished round-1 patch; the `ngram-prefetch-r1`
+manifest expected a `prefill_pipeline.py` hash that no published layer produced (the served `-mtpfix2` layer also ran
+an unpublished `memfix.py`); and `-mixstate` reused stale `/tmp/build` objects. The first images here used local
+workarounds (the refbase files, a rebased manifest entry, a `/tmp/build` cleanup). Upstream `07141f3` publishes the
+round-1 patch and `memfix.py`, clears `/tmp/build` in every native rebuild, and adds `docker/build-chain.sh`; this
+branch merges it and drops the workarounds.
 
-Build: `docker/build-chain-podman.sh` (35 layers, about 45 minutes on 32 threads). Serve:
+Build: `DOCKER=hosts/chaossrv/podman-docker.sh bash docker/build-chain.sh` (upstream script since `07141f3`, 35 layers). Serve:
 `scripts/launch-flashnext-podman.sh` (`FN_ROOT`, `FN_MODELS`).
 
 ## Numbers (2026-09-25)

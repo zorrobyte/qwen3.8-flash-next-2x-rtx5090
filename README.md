@@ -114,15 +114,16 @@ The `RMForceStaticBar1=1` registry key on the stock driver leaves `nvidia-smi to
 
 ## Fixes to the image chain
 
-The chain in `docker/README.md` does not build from the published files; upstream issue [#1](https://github.com/adrienbrault/qwen3.8-flash-next-2x-rtx5090/issues/1).
+The chain in `docker/README.md` did not build from the published files ([issue #1](https://github.com/adrienbrault/qwen3.8-flash-next-2x-rtx5090/issues/1)). Upstream `07141f3` fixed all three breaks found here and two more, and added `docker/build-chain.sh`; this branch merges it and builds with it.
 
-1. `hc-mix-v2-r2.patch` is relative to an unpublished r1 V2 mixer: all hunks fail on stock ExLlamaV3 v1.5.0 (`hc_mix.cu` is 828 lines; hunk 1 starts at 827). [`docker/Dockerfile.tabbyapi-hcmix2-refbase`](docker/Dockerfile.tabbyapi-hcmix2-refbase) installs the full files from `docker/overlays/refbase/files/` instead; against stock they differ only by the r2 mixer and the default-off `gr_mix_v2_fused`.
-2. `overlays/ngram-prefetch-r1` expects a `generator/prefill_pipeline.py` hash (`7f6e4b34…`) that no published layer produces; the chain has `1a5af53b…`. That file's hunk is comment-only, so its manifest entry is rebased; the other three files match.
-3. `Dockerfile.tabbyapi-mixstate` reused `/tmp/build` objects from earlier layers. The `decode-kernels-r2` payload keeps its checkout mtimes, older than those objects, so ninja skipped `libtorch/blocksparse_mlp.cpp` and the extension failed to import with `undefined symbol: exl3_moe_coop_run(…)` (the signature without `cudaEvent_t`). The Dockerfile now clears `/tmp/build`.
+1. `hc-mix-v2-r2.patch` was relative to an unpublished round-1 patch. Upstream published it as `docker/hc-mix-v2.patch` and applies it as its own layer (`-coopwide-hcmix1`).
+2. `overlays/ngram-prefetch-r1` expected a `generator/prefill_pipeline.py` hash that no published layer produced. The served `-mtpfix2` layer also ran `memfix.py`, which makes the prefill pipeline's 320 MB free-VRAM guard count the caching allocator's reusable reserve; upstream published it in `overlays/prefill-pipeline-mtp-overlay/`. The image measured in the tables above was built before that fix, with the manifest entry rebased instead, so it lacks that guard change.
+3. `Dockerfile.tabbyapi-mixstate` reused stale `/tmp/build` objects; upstream now clears `/tmp/build` in `-mixstate` and all four `-bszn` layers and imports `exllamav3_ext` at the end.
+
+On rootless podman the chain builds with `DOCKER=<shim> bash docker/build-chain.sh`, where the shim answers the two `buildx` probes and passes `build` through to `podman build --format docker` ([`hosts/chaossrv/podman-docker.sh`](hosts/chaossrv/podman-docker.sh)).
 
 ## Additions
 
-- [`docker/build-chain-podman.sh`](docker/build-chain-podman.sh): the full chain for rootless podman, about 45 minutes on 32 threads.
 - [`scripts/launch-flashnext-podman.sh`](scripts/launch-flashnext-podman.sh): the upstream launcher for rootless podman with CDI GPUs (`FN_ROOT`, `FN_MODELS`); the image is `tabbyapi:stack-r3-rows32-live`.
 - [`docker/overlays/live-status-r1`](docker/overlays/live-status-r1): `GET /live` returns TabbyAPI's active jobs (stage, prefill progress, generated tokens, tokens per second) and the generator's page-pool statistics as JSON; Python only, read-only.
 - [`hosts/chaossrv/monitor`](hosts/chaossrv/monitor): a stdlib dashboard for GPU, CPU, memory, temperatures, I/O, slots, live tok/s and recent requests.
@@ -139,7 +140,7 @@ The chain in `docker/README.md` does not build from the published files; upstrea
 ## Reproducing
 
 ```sh
-docker/build-chain-podman.sh                        # builds tabbyapi:stack-r3-rows32 (35 layers)
+DOCKER=$PWD/hosts/chaossrv/podman-docker.sh bash docker/build-chain.sh   # 35 layers -> tabbyapi:stack-r3-rows32
 podman build -t tabbyapi:stack-r3-rows32-live \
   -f docker/overlays/live-status-r1/Dockerfile.box docker/overlays/live-status-r1
 hf download r0b0tlab/Qwen3.8-Flash-Next-EXL3-2.50bpw --local-dir "$FN_MODELS/Qwen3.8-Flash-Next-EXL3-2.50bpw"
